@@ -7,10 +7,12 @@ who may see an order) live here, in code, and are covered by tests.
 import csv
 import re
 import unicodedata
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 RAW = Path(__file__).resolve().parent.parent / "data" / "raw"
+TZ = ZoneInfo("America/Campo_Grande")
 PIX_DISCOUNT = 0.05
 STALE_DAYS = 30
 MAX_RESULTS = 10
@@ -47,7 +49,7 @@ def max_installments(price: float) -> dict:
 
 class Store:
     def __init__(self, data_dir: Path = RAW, today: date | None = None):
-        self.today = today or date.today()
+        self.today = today or datetime.now(TZ).date()
         self.products = {p["product_id"]: p for p in load_table("products", data_dir)}
         self.customers = {c["customer_id"]: c for c in load_table("customers", data_dir)}
         self.orders = {o["order_id"]: o for o in load_table("orders", data_dir)}

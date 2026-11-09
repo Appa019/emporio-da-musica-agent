@@ -40,7 +40,6 @@ class SessionLog:
     def __init__(self, root: Path = ROOT):
         self.root = root
         self.session_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S") + "-" + uuid.uuid4().hex[:6]
-        self.customer_id: str | None = None
         self.path = root / "_anonymous" / f"{self.session_id}.jsonl"
 
     def write(self, event: str, **data) -> None:
@@ -52,7 +51,6 @@ class SessionLog:
 
     def link_customer(self, customer_id: str) -> None:
         """Move what was logged anonymously into the customer's own log."""
-        self.customer_id = customer_id
         target = self.root / customer_id / "log.jsonl"
         target.parent.mkdir(parents=True, exist_ok=True)
         if self.path.exists():
