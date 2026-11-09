@@ -118,3 +118,16 @@ def test_in_stock_items_come_first(store):
 def test_prices_round_half_up_to_the_cent(store):
     # Yamaha C40: 599.90 * 0.95 = 569.905 exactly; float rounding gave 569.90.
     assert store.search_products("yamaha c40")["results"][0]["pix_price"] == 569.91
+
+
+def test_search_with_several_product_names_returns_each(store):
+    # Real model query from a second visit; requiring every term in one product returned nothing.
+    query = "ukulele soprano Shelby SU-21S Kalani KAL-300S Kala KA-15S Ohana SK-10"
+    names = {r["name"] for r in store.search_products(query, category="Ukuleles", max_price=300)["results"]}
+    assert {"Shelby SU-21S Soprano Sunburst", "Kalani KAL-300S Soprano Natural",
+            "Kala KA-15S Soprano Mogno", "Ohana SK-10 Soprano Natural"} <= names
+
+
+def test_best_match_comes_first_and_no_match_is_empty(store):
+    assert store.search_products("yamaha c40")["results"][0]["name"] == "Yamaha C40 Nylon Natural"
+    assert store.search_products("saxofone")["count"] == 0

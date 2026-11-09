@@ -89,17 +89,20 @@ class Store:
             if category and _fold(category) not in _fold(category_name):
                 continue
             haystack = _fold(f"{p['name']} {p['description']} {category_name}")
-            if not all(t in haystack for t in terms):
+            # Rank by matched terms instead of requiring all: the model often sends several product names at once.
+            matched = sum(t in haystack for t in terms)
+            if terms and not matched:
                 continue
             offer = self._price(p)
             if max_price is not None and offer["final_price"] > max_price:
                 continue
-            results.append({"product_id": int(p["product_id"]), "name": p["name"], "category": category_name,
-                            **offer, "availability": self._availability(p), "description": p["description"],
-                            "specs": p["specs"]})
-        # In-stock items first, so unavailable ones never push sellable items out of the top results.
-        results.sort(key=lambda r: (r["availability"] != "in_stock", r["final_price"]))
-        return {"count": len(results), "results": results[:MAX_RESULTS], "truncated": len(results) > MAX_RESULTS}
+            results.append((matched, {"product_id": int(p["product_id"]), "name": p["name"], "category": category_name,
+                                      **offer, "availability": self._availability(p),
+                                      "description": p["description"], "specs": p["specs"]}))
+        # Best match first; then in-stock items, so unavailable ones never push sellable items out of the top results.
+        results.sort(key=lambda m: (-m[0], m[1]["availability"] != "in_stock", m[1]["final_price"]))
+        top = [r for _, r in results[:MAX_RESULTS]]
+        return {"count": len(results), "results": top, "truncated": len(results) > MAX_RESULTS}
 
     def get_orders(self, customer_id: str | None, order_id: int | None = None) -> dict:
         # Guardrail: customer_id comes from the session after identification, never from the model.
