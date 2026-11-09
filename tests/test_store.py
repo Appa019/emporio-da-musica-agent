@@ -113,3 +113,8 @@ def test_in_stock_items_come_first(store):
     availability = [r["availability"] for r in results]
     assert availability == sorted(availability, key=lambda a: a != "in_stock") and availability[0] == "in_stock"
     assert 113 not in [r["product_id"] for r in results]  # discontinued Shelby no longer takes a top-10 slot
+
+
+def test_prices_round_half_up_to_the_cent(store):
+    # Yamaha C40: 599.90 * 0.95 = 569.905 exactly; float rounding gave 569.90.
+    assert store.search_products("yamaha c40")["results"][0]["pix_price"] == 569.91

@@ -8,12 +8,13 @@ import csv
 import re
 import unicodedata
 from datetime import date, datetime
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 RAW = Path(__file__).resolve().parent.parent / "data" / "raw"
 TZ = ZoneInfo("America/Campo_Grande")
-PIX_DISCOUNT = 0.05
+PIX_DISCOUNT = Decimal("0.05")
 STALE_DAYS = 30
 MAX_RESULTS = 10
 
@@ -34,6 +35,11 @@ def _phone_key(text: str) -> str:
     return re.sub(r"\D", "", text or "")[-11:]
 
 
+def money(value: float | Decimal) -> float:
+    # Half-up to the cent on the decimal value: float round() turns 569.905 into 569.90.
+    return float(Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
 def min_installment(n: int) -> float:
     # Policy 3.1: R$ 80 from 4x, R$ 100 from 7x; up to 3x says "no minimum (except below R$ 50)", read as a R$ 50 floor.
     return 50.0 if n <= 3 else 80.0 if n <= 6 else 100.0
@@ -43,7 +49,7 @@ def max_installments(price: float) -> dict:
     """Largest interest-free plan allowed by policy 3.1."""
     for n in range(12, 1, -1):
         if price / n >= min_installment(n):
-            return {"installments": n, "installment_value": round(price / n, 2)}
+            return {"installments": n, "installment_value": money(Decimal(str(price)) / n)}
     return {"installments": 1, "installment_value": price}
 
 
@@ -113,11 +119,11 @@ class Store:
         if promo:
             pct = int(promo["discount_percent"])
             # Policy 6.2: promotions are not cumulative, so no PIX discount on a promotional price.
-            final = round(list_price * (1 - pct / 100), 2)
+            final = money(Decimal(str(list_price)) * (100 - pct) / 100)
             return {"list_price": list_price, "promotion": f"{promo['description']} -{pct}%",
                     "final_price": final, "pix_price": None, "card": max_installments(final)}
         return {"list_price": list_price, "promotion": None, "final_price": list_price,
-                "pix_price": round(list_price * (1 - PIX_DISCOUNT), 2), "card": max_installments(list_price)}
+                "pix_price": money(Decimal(str(list_price)) * (1 - PIX_DISCOUNT)), "card": max_installments(list_price)}
 
     @staticmethod
     def _availability(p: dict) -> str:
