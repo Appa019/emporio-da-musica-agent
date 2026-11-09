@@ -5,35 +5,24 @@ explicit rules in the agent's code, and business inconsistencies (an order
 total that does not match its items) are reported as recorded and flagged for
 a human. This script documents every finding and the decision taken for it.
 
-    python scripts/audit_data.py
+    python -m scripts.audit_data
 """
 
-import csv
 import re
 import statistics
 from collections import Counter, defaultdict
 from datetime import date
 from pathlib import Path
 
+from emporio.store import STALE_DAYS, load_table, min_installment
+
 ROOT = Path(__file__).resolve().parent.parent
-RAW = ROOT / "data" / "raw"
 OUT = ROOT / "data" / "DATA_REPORT.md"
-STALE_DAYS = 30
-
-
-def load(name: str) -> list[dict]:
-    with open(RAW / f"{name}.csv", encoding="utf-8") as f:
-        return list(csv.DictReader(f))
-
-
-def min_installment(n: int) -> float:
-    # Section 3.1 of the manual; "até 3x" has no minimum except a R$ 50 floor.
-    return 50.0 if n <= 3 else 80.0 if n <= 6 else 100.0
 
 
 def audit(today: date) -> list[tuple[str, str, list[str]]]:
-    products, customers, orders = load("products"), load("customers"), load("orders")
-    items, promotions, categories = load("order_items"), load("promotions"), load("categories")
+    products, customers, orders = load_table("products"), load_table("customers"), load_table("orders")
+    items, promotions, categories = load_table("order_items"), load_table("promotions"), load_table("categories")
     product = {p["product_id"]: p for p in products}
     customer_ids = {c["customer_id"] for c in customers}
     items_by_order = defaultdict(list)

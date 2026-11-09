@@ -3,7 +3,7 @@
 The manual is ~7 pages, so the agent keeps the whole text in its system prompt
 instead of chunking it for retrieval. Run again only if the PDF changes:
 
-    python scripts/extract_policies.py
+    python -m scripts.extract_policies
 """
 
 import re

@@ -16,7 +16,7 @@ STALE_DAYS = 30
 MAX_RESULTS = 10
 
 
-def _load(data_dir: Path, name: str) -> list[dict]:
+def load_table(name: str, data_dir: Path = RAW) -> list[dict]:
     with open(data_dir / f"{name}.csv", encoding="utf-8") as f:
         return list(csv.DictReader(f))
 
@@ -32,11 +32,15 @@ def _phone_key(text: str) -> str:
     return re.sub(r"\D", "", text or "")[-11:]
 
 
+def min_installment(n: int) -> float:
+    # Policy 3.1: R$ 80 from 4x, R$ 100 from 7x; up to 3x says "no minimum (except below R$ 50)", read as a R$ 50 floor.
+    return 50.0 if n <= 3 else 80.0 if n <= 6 else 100.0
+
+
 def max_installments(price: float) -> dict:
-    """Largest interest-free plan allowed by policy 3.1 (min installment R$ 50 up to 3x, R$ 80 up to 6x, R$ 100 up to 12x)."""
+    """Largest interest-free plan allowed by policy 3.1."""
     for n in range(12, 1, -1):
-        minimum = 50 if n <= 3 else 80 if n <= 6 else 100
-        if price / n >= minimum:
+        if price / n >= min_installment(n):
             return {"installments": n, "installment_value": round(price / n, 2)}
     return {"installments": 1, "installment_value": price}
 
@@ -44,14 +48,14 @@ def max_installments(price: float) -> dict:
 class Store:
     def __init__(self, data_dir: Path = RAW, today: date | None = None):
         self.today = today or date.today()
-        self.products = {p["product_id"]: p for p in _load(data_dir, "products")}
-        self.customers = {c["customer_id"]: c for c in _load(data_dir, "customers")}
-        self.orders = {o["order_id"]: o for o in _load(data_dir, "orders")}
-        self.categories = {c["category_id"]: c["name"] for c in _load(data_dir, "categories")}
+        self.products = {p["product_id"]: p for p in load_table("products", data_dir)}
+        self.customers = {c["customer_id"]: c for c in load_table("customers", data_dir)}
+        self.orders = {o["order_id"]: o for o in load_table("orders", data_dir)}
+        self.categories = {c["category_id"]: c["name"] for c in load_table("categories", data_dir)}
         self.items: dict[str, list[dict]] = {}
-        for i in _load(data_dir, "order_items"):
+        for i in load_table("order_items", data_dir):
             self.items.setdefault(i["order_id"], []).append(i)
-        self.promotions = {p["product_id"]: p for p in _load(data_dir, "promotions") if p["is_active"] == "1"}
+        self.promotions = {p["product_id"]: p for p in load_table("promotions", data_dir) if p["is_active"] == "1"}
 
     def identify_customer(self, phone: str = "", email: str = "") -> dict:
         """Phone is unique in the data; one email is shared by two customers, so email alone may be ambiguous."""
