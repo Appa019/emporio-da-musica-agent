@@ -1,6 +1,6 @@
 # Live evaluation
 
-`python -m scripts.eval_live --runs 5` on 2026-11-09, model `gpt-6-luna`, 70 checks in 5.2 min. Scenarios and assertions: `tests/test_live.py`.
+`python -m scripts.eval_live --runs 5` on 2026-11-09, model `gpt-6-luna`, 70 checks in 5.0 min. Scenarios and assertions: `tests/test_live.py`.
 
 **Overall: 70/70 (100%)**
 
