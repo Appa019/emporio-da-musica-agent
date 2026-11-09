@@ -35,7 +35,7 @@ def audit(today: date) -> list[tuple[str, str, list[str]]]:
             for p in products if p["status"] != "active" or int(p["stock_quantity"]) <= 0]
     checks.append(("Products not available for sale",
                    "Only `active` products with stock > 0 are offered. Discontinued items are reported as out of "
-                   "catalog and `coming_soon` as not yet available, even when stock > 0 (policy 7.3).", rows))
+                   "catalog (policy 7.3); `coming_soon` as not yet available, even when stock > 0.", rows))
 
     by_category = defaultdict(list)
     for p in products:
@@ -45,15 +45,14 @@ def audit(today: date) -> list[tuple[str, str, list[str]]]:
         median = statistics.median(float(p["price_brl"]) for p in ps)
         rows += [f"{p['product_id']} {p['name']}: R$ {float(p['price_brl']):.2f} vs category median R$ {median:.2f}"
                  for p in ps if float(p["price_brl"]) < median / 4]
-    checks.append(("Price outliers (below 1/4 of the category median)",
+    checks.append(("Price outliers, below 1/4 of the category median",
                    "The agent quotes the system price (policy 7.1 says never quote without the system), "
                    "but the item is listed here for a human to review.", rows))
 
     used = {p["category_id"] for p in products}
     rows = [f"{c['category_id']} {c['name']}" for c in categories if c["category_id"] not in used]
     checks.append(("Categories without products",
-                   "The agent says the category exists but has no item in the catalog right now; "
-                   "it never invents products to fill the gap.", rows))
+                   "The agent says the category exists but has no item in the catalog right now.", rows))
 
     rows = []
     for field in ("phone", "email"):
@@ -71,7 +70,7 @@ def audit(today: date) -> list[tuple[str, str, list[str]]]:
         if not items_by_order[o["order_id"]]:
             rows.append(f"order {o['order_id']}: no items")
     rows += [f"item of order {i['order_id']}: unknown product {i['product_id']}" for i in items if i["product_id"] not in product]
-    checks.append(("Referential integrity", "Nothing to decide when empty.", rows))
+    checks.append(("Referential integrity", "Checks orders to customers, orders to items and items to products.", rows))
 
     rows = []
     for o in orders:
@@ -103,9 +102,9 @@ def audit(today: date) -> list[tuple[str, str, list[str]]]:
             rows.append(f"order {o['order_id']}: shipped, estimated delivery {o['estimated_delivery']} already passed")
         elif o["status"] in ("pending", "confirmed") and age > STALE_DAYS:
             rows.append(f"order {o['order_id']}: {o['status']} for {age} days")
-    checks.append((f"Orders stuck in the same status (reference date {today.isoformat()})",
-                   "The agent reports the recorded status, says it looks delayed and offers to hand over "
-                   "to the team (complaint flow, policy 7.3).", rows))
+    checks.append(("Orders stuck in the same status",
+                   f"Counted up to {today.isoformat()}. The agent reports the recorded status, says it looks delayed "
+                   "and offers to hand over to the team (complaint flow, policy 7.3).", rows))
 
     rows = [f"order {i['order_id']} ({o['status']}): product {i['product_id']} {product[i['product_id']]['name']} is {product[i['product_id']]['status']}"
             for o in orders for i in items_by_order[o["order_id"]] if product[i["product_id"]]["status"] != "active"]
@@ -129,7 +128,7 @@ def audit(today: date) -> list[tuple[str, str, list[str]]]:
         rows.append(f"phones: {', '.join(phones)}")
     if len(emails) > 1:
         rows.append(f"emails: {', '.join(emails)}")
-    rows.append("payment table says credit card has a R$ 100 minimum installment; section 3.1 sets R$ 50 / 80 / 100 by number of installments (found by reading)")
+    rows.append("payment table says credit card has a R$ 100 minimum installment; section 3.1 sets R$ 50 / 80 / 100 by number of installments (found by hand; the script does not check this)")
     checks.append(("Policy manual inconsistencies",
                    "The agent gives (67) 3341-4444 (company data table, also on the cover) and the email without "
                    "an accent, and applies the more detailed rule in 3.1.", rows))
