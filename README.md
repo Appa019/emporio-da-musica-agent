@@ -52,14 +52,19 @@ The same folder has what those conversations left behind: an [audit log](example
 
 ## How it works
 
-```
-customer message
-  -> input guardrail (length)
-  -> gpt-6-luna (Responses API) with the rules + the whole policy manual in the prompt
-       <-> tools: identify_customer · search_products · get_orders · handoff_to_human
-  -> output guardrail (every R$ value must be backed)
-  -> reply
-everything above -> customers/<id>/log.jsonl ; end of conversation -> customers/<id>/memory.json
+```mermaid
+flowchart LR
+    C([Customer message]) --> G1{"Input guardrail<br/>max 1,500 chars"}
+    G1 -- ok --> M["gpt-6-luna<br/>Responses API<br/>rules + policy manual"]
+    G1 -- too long --> S1([Ask to shorten])
+    M --> G2{"Output guardrail<br/>every R$ value<br/>backed?"}
+    G2 -- yes --> R([Reply])
+    G2 -- "no: one retry" --> M
+    G2 -- no again --> F([Safe fallback])
+    M <-- function calling --> T["Read-only tools<br/>identify_customer<br/>search_products<br/>get_orders<br/>handoff_to_human"]
+    T <--> D[("CSV data")]
+    T <--> MEM[("customers/ID/<br/>memory.json")]
+    T --> LOG[("customers/ID/log.jsonl<br/>every message, tool call,<br/>guardrail and token count,<br/>phones and emails masked")]
 ```
 
 | File | Role |
