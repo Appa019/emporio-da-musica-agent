@@ -1,13 +1,15 @@
 """Agent loop and guardrails with a scripted fake of the OpenAI client (no network)."""
 
 import json
+import os
 from datetime import date, datetime
 from types import SimpleNamespace
 
 import pytest
-
+from openai import OpenAIError
 from openai.types.responses import ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
 
+from emporio.__main__ import load_env
 from emporio.agent import FALLBACK, MAX_MESSAGE_CHARS, TZ, Agent, price_values, store_status, unverified_prices
 from emporio.customer_records import SessionLog, load_memory
 from emporio.store import Store
@@ -38,7 +40,9 @@ class FakeClient:
         self.requests.append(request)
         output = self.turns.pop(0)
         text = "".join(part.text for item in output if item.type == "message" for part in item.content)
-        return SimpleNamespace(output=output, output_text=text, status="completed")
+        return SimpleNamespace(output=output, output_text=text, status=self.status, incomplete_details=None)
+
+    status = "completed"
 
 
 @pytest.fixture
@@ -162,3 +166,25 @@ def test_replayed_items_have_no_null_fields(make_agent):
     agent.reply("tem yamaha?")
     replayed = [h for h in agent.history if isinstance(h, dict) and h.get("type") in ("function_call", "message")]
     assert replayed and all(None not in item.values() and "async_" not in item for item in replayed)
+
+
+def test_incomplete_response_falls_back(make_agent):
+    agent = make_agent([message("Os violões disponíveis s")])
+    agent.client.status = "incomplete"
+    assert agent.reply("quais violões?") == FALLBACK
+
+
+def test_api_error_falls_back_and_is_reported(make_agent, caplog):
+    agent = make_agent()
+    def fail(**_):
+        raise OpenAIError("invalid api key")
+    agent.client.create = fail
+    assert agent.reply("oi") == FALLBACK
+    assert "invalid api key" in caplog.text
+
+
+def test_env_values_lose_quotes(tmp_path, monkeypatch):
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
+    (tmp_path / ".env").write_text('OPENAI_MODEL="gpt-6-luna"\n# OPENAI_API_KEY=commented\n')
+    load_env(tmp_path / ".env")
+    assert os.environ["OPENAI_MODEL"] == "gpt-6-luna"

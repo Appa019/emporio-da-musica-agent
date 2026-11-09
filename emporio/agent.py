@@ -10,6 +10,7 @@ Guardrails, from cheapest to most specific:
 """
 
 import json
+import logging
 import os
 import re
 from datetime import datetime, timedelta
@@ -27,6 +28,8 @@ TZ = ZoneInfo("America/Campo_Grande")
 MAX_TOOL_ROUNDS = 6
 MAX_MESSAGE_CHARS = 1500
 MAX_ID_ATTEMPTS = 3
+API_TIMEOUT_SECONDS = 60
+logger = logging.getLogger(__name__)
 FALLBACK = ("Desculpa, tive um problema para confirmar essa informação no sistema agora. "
             "Se quiser, passo seu atendimento para alguém da equipe pelo (67) 3341-4444.")
 
@@ -150,7 +153,7 @@ def unverified_prices(reply: str, known: set[float]) -> list[float]:
 class Agent:
     def __init__(self, store: Store, client: OpenAI | None = None, log: SessionLog | None = None, clock=None):
         self.store = store
-        self.client = client or OpenAI()
+        self.client = client or OpenAI(timeout=API_TIMEOUT_SECONDS)
         self.model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
         self.log = log or SessionLog()
         self.clock = clock or (lambda: datetime.now(TZ))
@@ -185,6 +188,8 @@ class Agent:
                     self.history.append({"role": "assistant", "content": answer})
         except OpenAIError as e:
             self.log.write("error", type=type(e).__name__, detail=str(e)[:300])
+            # The customer sees the fallback; the operator needs the real cause (bad key, unknown model, timeout).
+            logger.warning("OpenAI error: %s: %s", type(e).__name__, e)
             answer = FALLBACK
             self.history.append({"role": "assistant", "content": answer})
         self.log.write("assistant_message", text=answer)
@@ -208,6 +213,9 @@ class Agent:
         for _ in range(MAX_TOOL_ROUNDS):
             response = self.client.responses.create(model=self.model, instructions=instructions, input=self.history,
                                                     tools=self.tools, store=False, reasoning={"effort": "low"})
+            if response.status != "completed":
+                self.log.write("error", type="incomplete_response", detail=str(response.incomplete_details))
+                return FALLBACK
             # Replay every output item (reasoning included) on the next call, as store=False requires;
             # exclude_none drops SDK-only fields such as `async_` that the API rejects as input.
             self.history.extend(item.model_dump(exclude_none=True) for item in response.output)
