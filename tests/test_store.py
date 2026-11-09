@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from emporio.store import Store
+from emporio.store import Store, max_installments
 
 
 @pytest.fixture(scope="module")
@@ -82,3 +82,13 @@ def test_unavailable_products_are_labelled(store):
 def test_search_is_case_insensitive_and_capped(store):
     result = store.search_products(category="violões")
     assert result["count"] == 35 and len(result["results"]) == 10 and result["truncated"]
+
+
+@pytest.mark.parametrize("price, plan", [
+    (2199.0, (12, 183.25)),   # R$ 100 minimum from 7x
+    (429.9, (5, 85.98)),      # 6x would be R$ 71.65, below R$ 80
+    (159.9, (3, 53.3)),       # up to 3x only needs R$ 50
+    (60.0, (1, 60.0)),        # 2x of R$ 30 is below the R$ 50 floor
+])
+def test_max_installments_follow_policy(price, plan):
+    assert tuple(max_installments(price).values()) == plan

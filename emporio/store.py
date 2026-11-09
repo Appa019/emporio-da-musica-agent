@@ -30,6 +30,15 @@ def _digits(text: str) -> str:
     return re.sub(r"\D", "", text or "")
 
 
+def max_installments(price: float) -> dict:
+    """Largest interest-free plan allowed by policy 3.1 (min installment R$ 50 up to 3x, R$ 80 up to 6x, R$ 100 up to 12x)."""
+    for n in range(12, 1, -1):
+        minimum = 50 if n <= 3 else 80 if n <= 6 else 100
+        if price / n >= minimum:
+            return {"installments": n, "installment_value": round(price / n, 2)}
+    return {"installments": 1, "installment_value": price}
+
+
 class Store:
     def __init__(self, data_dir: Path = RAW, today: date | None = None):
         self.today = today or date.today()
@@ -95,10 +104,11 @@ class Store:
         if promo:
             pct = int(promo["discount_percent"])
             # Policy 6.2: promotions are not cumulative, so no PIX discount on a promotional price.
+            final = round(list_price * (1 - pct / 100), 2)
             return {"list_price": list_price, "promotion": f"{promo['description']} -{pct}%",
-                    "final_price": round(list_price * (1 - pct / 100), 2), "pix_price": None}
+                    "final_price": final, "pix_price": None, "card": max_installments(final)}
         return {"list_price": list_price, "promotion": None, "final_price": list_price,
-                "pix_price": round(list_price * (1 - PIX_DISCOUNT), 2)}
+                "pix_price": round(list_price * (1 - PIX_DISCOUNT), 2), "card": max_installments(list_price)}
 
     @staticmethod
     def _availability(p: dict) -> str:
