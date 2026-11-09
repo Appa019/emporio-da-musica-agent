@@ -190,8 +190,9 @@ class Agent:
         for _ in range(MAX_TOOL_ROUNDS):
             response = self.client.responses.create(model=self.model, instructions=instructions, input=self.history,
                                                     tools=self.tools, store=False, reasoning={"effort": "low"})
-            # Replay every output item (reasoning included) on the next call, as store=False requires.
-            self.history.extend(item.model_dump(exclude={"status"}) for item in response.output)
+            # Replay every output item (reasoning included) on the next call, as store=False requires;
+            # exclude_none drops SDK-only fields such as `async_` that the API rejects as input.
+            self.history.extend(item.model_dump(exclude_none=True) for item in response.output)
             calls = [item for item in response.output if item.type == "function_call"]
             if not calls:
                 return response.output_text or FALLBACK

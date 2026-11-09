@@ -6,6 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from openai.types.responses import ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
+
 from emporio.agent import FALLBACK, MAX_MESSAGE_CHARS, TZ, Agent, store_status, unverified_prices
 from emporio.customer_records import SessionLog, load_memory
 from emporio.store import Store
@@ -15,17 +17,17 @@ PHONE_CUSTOMER_1 = "(67) 99812-3456"
 
 
 def call(name, **args):
-    data = {"type": "function_call", "name": name, "arguments": json.dumps(args), "call_id": f"call_{name}"}
-    return SimpleNamespace(**data, model_dump=lambda exclude=None: data)
+    return ResponseFunctionToolCall(type="function_call", name=name, arguments=json.dumps(args),
+                                    call_id=f"call_{name}", id=f"fc_{name}", status="completed")
 
 
 def message(text):
-    data = {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": text}]}
-    return SimpleNamespace(type="message", text=text, model_dump=lambda exclude=None: data)
+    return ResponseOutputMessage(id="msg_1", type="message", role="assistant", status="completed",
+                                 content=[ResponseOutputText(type="output_text", text=text, annotations=[])])
 
 
 class FakeClient:
-    """Returns one scripted list of output items per responses.create call."""
+    """Returns one scripted list of real SDK output items per responses.create call."""
 
     def __init__(self, *turns):
         self.turns = list(turns)
@@ -35,8 +37,8 @@ class FakeClient:
     def create(self, **request):
         self.requests.append(request)
         output = self.turns.pop(0)
-        text = "".join(item.text for item in output if item.type == "message")
-        return SimpleNamespace(output=output, output_text=text)
+        text = "".join(part.text for item in output if item.type == "message" for part in item.content)
+        return SimpleNamespace(output=output, output_text=text, status="completed")
 
 
 @pytest.fixture
@@ -130,3 +132,11 @@ def test_memory_is_saved_and_returned_next_session(make_agent):
 ])
 def test_store_status(now, expected):
     assert store_status(now) == expected
+
+
+def test_replayed_items_have_no_null_fields(make_agent):
+    # The SDK models carry optional fields as None (e.g. `async_`); sending them back is rejected by the API.
+    agent = make_agent([call("search_products", query="yamaha", category=None, max_price=None)], [message("Achei!")])
+    agent.reply("tem yamaha?")
+    replayed = [h for h in agent.history if isinstance(h, dict) and h.get("type") in ("function_call", "message")]
+    assert replayed and all(None not in item.values() and "async_" not in item for item in replayed)
