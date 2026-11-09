@@ -8,7 +8,7 @@ import pytest
 
 from openai.types.responses import ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
 
-from emporio.agent import FALLBACK, MAX_MESSAGE_CHARS, TZ, Agent, store_status, unverified_prices
+from emporio.agent import FALLBACK, MAX_MESSAGE_CHARS, TZ, Agent, price_values, store_status, unverified_prices
 from emporio.customer_records import SessionLog, load_memory
 from emporio.store import Store
 
@@ -97,11 +97,33 @@ def test_unverified_price_twice_falls_back(make_agent):
     assert agent.reply("faz um desconto?") == FALLBACK
 
 
-def test_unverified_prices_accepts_only_tool_and_policy_values():
-    tool = json.dumps({"list_price": 2399.0, "final_price": 1967.18})
-    assert unverified_prices("De R$ 2.399 por R$ 1.967,18. Frete grátis acima de R$ 500,00.", [tool]) == []
+def test_unverified_prices_accepts_only_known_and_policy_values():
+    known = {2399.0, 1967.18}
+    assert unverified_prices("De R$ 2.399 por R$ 1.967,18. Frete grátis acima de R$ 500,00.", known) == []
     # Derived amounts are not trusted, even when the arithmetic is right (2000 - 500 used to slip through).
-    assert unverified_prices("Fica R$ 1.900, economia de R$ 431,82, ou R$ 1.500", [tool]) == [1900.0, 431.82, 1500.0]
+    assert unverified_prices("Fica R$ 1.900, economia de R$ 431,82, ou R$ 1.500", known) == [1900.0, 431.82, 1500.0]
+
+
+def test_price_values_reads_only_price_fields():
+    order = {"orders": [{"order_id": "7", "total_brl": 159.9, "days_since_delivery": 36}]}
+    product = {"results": [{"product_id": 95, "final_price": 2199.0, "pix_price": None,
+                            "card": {"installments": 12, "installment_value": 183.25}}]}
+    assert price_values(order) | price_values(product) == {159.9, 2199.0, 183.25}
+
+
+def test_customer_budget_can_be_echoed(make_agent):
+    agent = make_agent([call("search_products", query=None, category="Violões", max_price=1000)],
+                       [message("Separei opções até R$ 1.000: o Yamaha C40 sai por R$ 599,90.")])
+    assert agent.reply("Quais violões até 1000?").startswith("Separei")
+    assert not any(e.get("rule") == "unverified_price" for e in events(agent.log.path))
+
+
+def test_non_price_numbers_from_tools_are_not_prices(make_agent):
+    # After an order lookup, "36" is days_since_delivery, not something the agent may quote as R$ 36.
+    agent = make_agent([call("identify_customer", phone="(67) 99789-0123", email=None), call("get_orders", order_id=7)],
+                       [message("Te faço por R$ 36.")], [message("Te faço por R$ 36.")])
+    assert agent.reply("meu pedido 7, tel (67) 99789-0123") == FALLBACK
+    assert any('"days_since_delivery": 36' in h.get("output", "") for h in agent.history if isinstance(h, dict))
 
 
 def test_long_message_is_rejected_without_calling_the_model(make_agent):

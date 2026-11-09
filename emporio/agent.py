@@ -115,19 +115,35 @@ def store_status(now: datetime) -> str:
 
 
 MONEY = re.compile(r"R\$\s?(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?)")
-NUMBER = re.compile(r"\d+(?:\.\d+)?")
+# Amounts the customer typed, with or without "R$" ("até 1000", "R$ 2.500,00").
+USER_AMOUNT = re.compile(r"\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?")
+PRICE_FIELDS = {"list_price", "final_price", "pix_price", "installment_value", "total_brl"}
+
+
+def _to_float(amount: str) -> float:
+    return float(amount.replace(".", "").replace(",", "."))
 
 
 def money_values(text: str) -> list[float]:
-    return [float(m.replace(".", "").replace(",", ".")) for m in MONEY.findall(text)]
+    return [_to_float(m) for m in MONEY.findall(text)]
+
+
+def price_values(data) -> set[float]:
+    """Values of price fields anywhere in a tool result; other numbers (ids, days, stock) are not prices."""
+    if isinstance(data, dict):
+        found = {float(v) for k, v in data.items() if k in PRICE_FIELDS and isinstance(v, (int, float))}
+        return found.union(*(price_values(v) for v in data.values()))
+    if isinstance(data, list):
+        return set().union(*(price_values(v) for v in data))
+    return set()
 
 
 POLICY_VALUES = set(money_values(POLICIES))
 
 
-def unverified_prices(reply: str, tool_outputs: list[str]) -> list[float]:
-    """R$ values in the reply that no tool result or manual rule backs."""
-    known = POLICY_VALUES | {float(n) for out in tool_outputs for n in NUMBER.findall(out)}
+def unverified_prices(reply: str, known: set[float]) -> list[float]:
+    """R$ values in the reply backed by neither a tool price field, the manual, nor the customer's own message."""
+    known = POLICY_VALUES | known
     return [v for v in money_values(reply) if not any(abs(v - k) < 0.011 for k in known)]
 
 
@@ -142,7 +158,7 @@ class Agent:
         self.customer_id: str | None = None
         self.failed_ids = 0
         self.history: list = []
-        self.tool_outputs: list[str] = []
+        self.known_prices: set[float] = set()
         self.transcript: list[str] = []
         self.log.write("session_start", model=self.model, reference_date=store.today.isoformat())
 
@@ -153,15 +169,17 @@ class Agent:
         self.log.write("user_message", text=text)
         self.transcript.append(f"Cliente: {text}")
         self.history.append({"role": "user", "content": text})
+        # The customer's own budget may be echoed back ("até R$ 1.000") without being a quoted price.
+        self.known_prices |= {_to_float(m) for m in USER_AMOUNT.findall(text)}
         try:
             answer = self._run()
-            bad = unverified_prices(answer, self.tool_outputs)
+            bad = unverified_prices(answer, self.known_prices)
             if bad:
                 self.log.write("guardrail", rule="unverified_price", values=bad, draft=answer)
                 self.history.append({"role": "developer", "content": f"Your last reply quoted R$ values not returned by "
                                      f"any tool: {bad}. Rewrite it using only values from tool results."})
                 answer = self._run()
-                if unverified_prices(answer, self.tool_outputs):
+                if unverified_prices(answer, self.known_prices):
                     self.log.write("guardrail", rule="unverified_price_fallback", draft=answer)
                     answer = FALLBACK
                     self.history.append({"role": "assistant", "content": answer})
@@ -199,7 +217,7 @@ class Agent:
             for call in calls:
                 result = self._call_tool(call.name, call.arguments)
                 output = json.dumps(result, ensure_ascii=False)
-                self.tool_outputs.append(output)
+                self.known_prices |= price_values(result)
                 self.history.append({"type": "function_call_output", "call_id": call.call_id, "output": output})
         self.log.write("guardrail", rule="max_tool_rounds")
         return FALLBACK
