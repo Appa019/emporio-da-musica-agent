@@ -1,0 +1,3 @@
+openai>=3.46,<4
+pypdf>=7,<8
+pytest>=9
