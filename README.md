@@ -1,5 +1,7 @@
 # Empório da Música customer service agent
 
+[![tests](https://github.com/Appa019/emporio-da-musica-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/Appa019/emporio-da-musica-agent/actions/workflows/tests.yml)
+
 A text-message assistant for Empório da Música, a fictional musical instrument store in Campo Grande/MS. It answers
 in Brazilian Portuguese as "Duda", looks up products, prices and orders through tools, applies the store's policy
 manual, and declines what is out of scope.
@@ -7,9 +9,23 @@ manual, and declines what is out of scope.
 The core is small: one OpenAI model, four read-only tools and a tool loop of about 50 lines. Business rules that a language
 model tends to get wrong (price math, date windows, who may see which order) live in plain Python and are tested.
 
+In numbers: 55 offline tests on Linux, Windows and macOS; 14 live scenarios run 5 times, 70/70 in the
+[latest evaluation](tests/EVAL_RESULTS.md); about US$ 0.0006 per conversation. The bugs that testing found are listed
+in [What testing caught](#what-testing-caught).
+
+**Core and extras.** The brief asks for a persona, tools for data, the policies, and out-of-scope handling; that is
+`emporio/store.py` plus the prompt and tool loop in `emporio/agent.py`. Everything else is an extra, each with a reason:
+
+- Guardrails on input, tools and output: an agent that quotes prices and shows orders must not invent either.
+- Per-customer audit log: every answer can be traced back to the tool results behind it.
+- Long-term memory: a returning customer should not have to repeat what they asked last time.
+- Data audit: the CSVs and the manual contradict each other in places, and the agent has to pick a side.
+- Live evaluation with pass rates: one green run of a non-deterministic model proves little.
+- Team report: the log is only useful if someone reads it, so the script reads it for the team.
+
 ## Run it
 
-Tested on Python 3.12, Linux.
+Python 3.12. Linux and macOS:
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -17,6 +33,19 @@ pip install -r requirements.txt
 cp .env.example .env              # then set OPENAI_API_KEY
 python -m emporio --today 2026-03-25
 ```
+
+Windows (PowerShell):
+
+```powershell
+py -3.12 -m venv .venv; .venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+copy .env.example .env            # then set OPENAI_API_KEY
+python -m emporio --today 2026-03-25
+```
+
+If PowerShell refuses to run `Activate.ps1`, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once. The live
+tests on Windows take `$env:RUN_LIVE=1` before the pytest command instead of the `RUN_LIVE=1` prefix. The model can be
+changed with `OPENAI_MODEL` in `.env`; the results below are for `gpt-6-luna`.
 
 Type messages after `Você:`; `sair` ends the conversation and saves the customer's memory.
 
@@ -197,46 +226,28 @@ Each of these was a commit of its own:
 ## How I used AI coding assistants
 
 I built this with **Claude Code** (Anthropic's terminal agent, model Claude Opus 5.5). **Claude wrote most of the
-code, the tests and the first draft of this README.** My work was deciding what to build, setting the rules Claude
-works under, judging the results and choosing which fixes to make. This section describes that setup.
+code, the tests and the first draft of this README.** I decided what to build (the features, the "as simple as
+possible" scope, the bar for done), set the rules Claude works under, read every recorded answer as a customer and
+chose the fixes. Several rows of the table above came from that reading, not from tests.
 
-### What I decided
+**Code quality.**
 
-The features (tool calling, guardrails, a per-customer audit log, long-term memory, the evaluation and the team
-report), the scope ("as simple as possible", so no framework, no RAG, no UI), and the bar for done. I read every
-recorded answer as if I were the customer and asked for the tone changes ("simpático e informativo"); several fixes in
-the table above came from that reading, not from tests.
+- A global instruction file loaded in every session: never claim something works without running it; take the smallest
+  change that solves the problem (don't build it, standard library, one line, then an abstraction); no dependency the
+  standard library covers; never trade validation, error handling or security for brevity; check external libraries
+  against current docs.
+- A pre-mortem before building. Here it surfaced the data traps, so the data audit came before the agent.
+- Distrust of good numbers. The first evaluation came back at 100%, so I added five harder scenarios, and the next run
+  found real failures.
+- A review command with separate lenses (code, prose, pre-mortem) run by parallel subagents. A finding needs a concrete
+  failing case to be reported. The first review found the two bugs at the top of the table above.
+- Real runs over mocks: the bugs that mattered only showed up against the real model.
 
-### How I keep code quality
+**Version control.**
 
-- **Rules in a global instruction file** that Claude loads in every session. The main ones: never say something works
-  without running it (tests, build or a real call); take the smallest change that fully solves the problem, in this
-  order: don't build it, use the standard library, one line, then an abstraction; no new dependency when the standard
-  library does it; never cut validation, error handling or security to make code shorter; comments explain why, not
-  what; check every external library against current documentation before using it.
-- **A minimal-code plugin** that is always on. It pushes back on speculative abstractions and options nobody asked for,
-  and any deliberate shortcut must carry a `shortcut:` comment naming its limit, so it can be listed later as debt.
-- **A pre-mortem before building.** For any plan of this size, Claude first argues how it would fail. Here it surfaced
-  the data traps, which is why the data audit came before the agent.
-- **Skepticism about good numbers.** When the first evaluation came back at 100%, the rule is to distrust it. That is
-  why I added five harder scenarios from the data traps; the next run found real failures.
-- **Review with separate lenses.** A review command runs parallel subagents: one for code (runs the tests, scans for
-  secrets, checks every API call against current docs, looks for failure paths and dead code), one for prose and one
-  for a pre-mortem of the delivery. Each finding needs a concrete failing case before it is reported. The first review
-  found the two bugs at the top of the table above.
-- **A writing pass** that removes AI-sounding text from docs and comments.
-- **Real runs over mocks.** The offline tests use a fake client built from the SDK's real types, and the live tests and
-  evaluation call the real model, because the bugs that mattered only showed up there.
-
-### How I keep version control clean
-
-- **One logical change per commit**, in Conventional Commits (`feat:`, `fix:`, `test:`, `refactor:`, `docs:`), in
-  English. Every fix in this repo has its own commit, in the order the problem was found.
-- **A commit command** that runs the tests, scans the diff for secrets and only then commits. Secrets live in `.env`,
-  which is ignored; `.env.example` documents the variables.
-- **No AI co-author lines in the history.** This section is where I disclose how the commits were made.
-- **Guards against irreversible actions.** A shell hook blocks force pushes, hard resets, branch deletions, recursive
-  deletes outside the project and similar commands, and global git hooks control where each repository may be pushed.
-- **Traceability.** Every prompt and tool call of a session is logged locally, a memory plugin keeps decisions and the
-  project state between sessions, and an end-of-work command checks that the project notes are updated and everything
-  is committed. My Claude configuration is itself versioned in git.
+- One logical change per commit, in Conventional Commits, in English. Every fix has its own commit, in the order the
+  problem was found. CI runs the offline tests on Linux, Windows and macOS on every push.
+- A commit command that runs the tests and scans the diff for secrets first. Secrets live in `.env`, which git ignores.
+- No AI co-author lines in the history; this section is the disclosure.
+- A shell hook blocks irreversible commands (force push, hard reset, recursive deletes outside the project), and every
+  prompt and tool call of a session is logged locally.
