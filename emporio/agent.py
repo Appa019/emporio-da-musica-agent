@@ -223,6 +223,7 @@ class Agent:
         for _ in range(MAX_TOOL_ROUNDS):
             response = self.client.responses.create(model=self.model, instructions=instructions, input=self.history,
                                                     tools=self.tools, store=False, reasoning={"effort": "low"})
+            self._log_usage(response, "reply")
             if response.status != "completed":
                 self.log.write("error", type="incomplete_response", detail=str(response.incomplete_details))
                 return FALLBACK
@@ -290,4 +291,14 @@ class Agent:
             text={"format": {"type": "json_schema", "name": "memory", "strict": True, "schema": {
                 "type": "object", "properties": {"facts": {"type": "array", "items": {"type": "string"}}},
                 "required": ["facts"], "additionalProperties": False}}})
+        self._log_usage(response, "memory")
         return json.loads(response.output_text)["facts"]
+
+    def _log_usage(self, response, purpose: str) -> None:
+        """Token counts per call; scripts/ops_report.py turns them into cost per conversation."""
+        usage = getattr(response, "usage", None)
+        if usage:
+            self.log.write("llm_call", purpose=purpose, model=self.model, input_tokens=usage.input_tokens,
+                           cached_tokens=usage.input_tokens_details.cached_tokens,
+                           cache_write_tokens=usage.input_tokens_details.cache_write_tokens,
+                           output_tokens=usage.output_tokens)

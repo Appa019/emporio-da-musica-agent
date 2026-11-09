@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 from openai import OpenAIError
-from openai.types.responses import ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
+from openai.types.responses import ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText, ResponseUsage
 
 from emporio.__main__ import load_env
 from emporio.agent import FALLBACK, MAX_MESSAGE_CHARS, TZ, Agent, price_values, store_status, unverified_prices
@@ -40,7 +40,10 @@ class FakeClient:
         self.requests.append(request)
         output = self.turns.pop(0)
         text = "".join(part.text for item in output if item.type == "message" for part in item.content)
-        return SimpleNamespace(output=output, output_text=text, status=self.status, incomplete_details=None)
+        return SimpleNamespace(output=output, output_text=text, status=self.status, incomplete_details=None,
+                               usage=ResponseUsage(input_tokens=1000, output_tokens=50, total_tokens=1050,
+                                                   input_tokens_details={"cached_tokens": 800, "cache_write_tokens": 0},
+                                                   output_tokens_details={"reasoning_tokens": 10}))
 
     status = "completed"
 
@@ -188,3 +191,13 @@ def test_env_values_lose_quotes(tmp_path, monkeypatch):
     (tmp_path / ".env").write_text('OPENAI_MODEL="gpt-6-luna"\n# OPENAI_API_KEY=commented\n')
     load_env(tmp_path / ".env")
     assert os.environ["OPENAI_MODEL"] == "gpt-6-luna"
+
+
+def test_token_usage_is_logged_per_call(make_agent):
+    agent = make_agent([call("search_products", query="yamaha", category=None, max_price=None)], [message("Achei!")])
+    agent.reply("tem yamaha?")
+    calls = [e for e in events(agent.log.path) if e["event"] == "llm_call"]
+    assert len(calls) == 2
+    assert calls[0] | {"ts": None, "session": None} == {"ts": None, "session": None, "event": "llm_call", "purpose": "reply",
+                                                         "model": agent.model, "input_tokens": 1000, "cached_tokens": 800,
+                                                         "cache_write_tokens": 0, "output_tokens": 50}
