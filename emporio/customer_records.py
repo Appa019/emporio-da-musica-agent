@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent / "customers"
 MAX_FACTS = 8
 
 EMAIL = re.compile(r"\b([\w.+-])[\w.+-]*@([\w-]+\.[\w.]+)")
-PHONE = re.compile(r"(?<!\d)(?:\(?\d{2}\)?\s?)?9?\d{4}[-\s]?(\d{4})(?!\d)")
+PHONE = re.compile(r"(?<!\d)(?:\+?55\s?)?(?:\(?0?\d{2}\)?\s?)?9?\d{4}[-\s]?(\d{4})(?!\d)")
 
 
 def mask(text: str) -> str:

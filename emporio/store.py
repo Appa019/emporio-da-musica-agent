@@ -26,8 +26,9 @@ def _fold(text: str) -> str:
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().lower()
 
 
-def _digits(text: str) -> str:
-    return re.sub(r"\D", "", text or "")
+def _phone_key(text: str) -> str:
+    # DDD + number: the last 11 digits, so "+55 67 9...", "067 9..." and "(67) 9..." all match.
+    return re.sub(r"\D", "", text or "")[-11:]
 
 
 def max_installments(price: float) -> dict:
@@ -53,8 +54,8 @@ class Store:
 
     def identify_customer(self, phone: str = "", email: str = "") -> dict:
         """Phone is unique in the data; one email is shared by two customers, so email alone may be ambiguous."""
-        if _digits(phone):
-            matches = [c for c in self.customers.values() if _digits(c["phone"]) == _digits(phone)]
+        if _phone_key(phone):
+            matches = [c for c in self.customers.values() if _phone_key(c["phone"]) == _phone_key(phone)]
         elif email.strip():
             matches = [c for c in self.customers.values() if c["email"].strip().lower() == email.strip().lower()]
         else:

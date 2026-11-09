@@ -13,6 +13,8 @@ def store():
 def test_identify_by_phone_in_any_format(store):
     assert store.identify_customer(phone="67998123456")["customer_id"] == "1"
     assert store.identify_customer(phone="(67) 99812-3456")["first_name"] == "Lucas"
+    for phone in ("+55 67 99812-3456", "5567998123456", "(067) 99812-3456"):
+        assert store.identify_customer(phone=phone)["customer_id"] == "1", phone
 
 
 def test_identify_never_returns_contact_data(store):

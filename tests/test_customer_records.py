@@ -8,6 +8,10 @@ def test_mask_phone_and_email():
     assert mask(text) == "meu zap é *****-3456, ou *****-3456, email l***@jmail.com"
 
 
+def test_mask_phone_with_country_code():
+    assert mask("+55 67 99812-3456 ou 5567998123456") == "*****-3456 ou *****-3456"
+
+
 def test_mask_keeps_prices_orders_and_tracking():
     text = "pedido 15, R$ 2.089,05, 12x de R$ 183,25, rastreio BRAB1234567BR, 2026-02-17"
     assert mask(text) == text
