@@ -6,7 +6,7 @@ A text-message assistant for Empório da Música, a fictional musical instrument
 in Brazilian Portuguese as "Duda", looks up products, prices and orders through tools, applies the store's policy
 manual, and declines what is out of scope.
 
-The core is small: one OpenAI model, four read-only tools and a tool loop of about 50 lines. Business rules that a language
+The core is small: one OpenAI model, four tools that never change store data and a tool loop of about 50 lines. Business rules that a language
 model tends to get wrong (price math, date windows, who may see which order) live in plain Python and are tested.
 
 In numbers: 55 offline tests on Linux, Windows and macOS; 14 live scenarios run 5 times, 70/70 in the
@@ -90,7 +90,7 @@ flowchart LR
     G2 -- yes --> R([Reply])
     G2 -- "no: one retry" --> M
     G2 -- no again --> F([Safe fallback])
-    M <-- function calling --> T["Read-only tools<br/>identify_customer<br/>search_products<br/>get_orders<br/>handoff_to_human"]
+    M <-- function calling --> T["Tools, no writes to store data<br/>identify_customer<br/>search_products<br/>get_orders<br/>handoff_to_human"]
     T <--> D[("CSV data")]
     T <--> MEM[("customers/ID/<br/>memory.json")]
     T --> LOG[("customers/ID/log.jsonl<br/>every message, tool call,<br/>guardrail and token count,<br/>phones and emails masked")]
@@ -112,8 +112,9 @@ to learn and debug without solving anything this problem has. The loop is easy t
 **Model: `gpt-6-luna`.** It is OpenAI's cheapest tier with function calling and structured outputs (US$ 0.10 / 0.50 per
 million input / output tokens). The live evaluation showed it was good enough, so there was no reason to pay for a
 bigger model. Reasoning effort is `low` to keep replies fast. I used the Responses API because, for this model, Chat
-Completions only supports function calling with reasoning turned off. Requests use `store=False`, so no conversation is
-kept on OpenAI's side; the reasoning items are replayed on each call.
+Completions only supports function calling with reasoning turned off. Requests use `store=False`, so OpenAI does not keep
+responses for later retrieval (its abuse-monitoring logs, up to 30 days, still apply); the reasoning items are replayed
+on each call.
 
 **Policies: whole manual in the prompt, no RAG.** The manual is 13 KB of text, about 4k tokens. Chunking and retrieval
 would add a failure mode (the right paragraph not retrieved) and gain nothing at this size. The prompt is built so the
@@ -138,7 +139,7 @@ the team", "memory can be outdated, search again".
 |---|---|
 | Input | messages over 1,500 characters are refused without calling the model |
 | Prompt | scope (instruments only), persona, customer messages and tool results treated as data, not instructions |
-| Tools | read-only; the customer id lives in the session and is never a model argument, so the model cannot ask for another customer's orders; a missing order and someone else's order get the same answer; 3 identification attempts per conversation; one identity per conversation |
+| Tools | no tool changes store data (`handoff_to_human` only records a request for the team); the customer id lives in the session and is never a model argument, so the model cannot ask for another customer's orders; a missing order and someone else's order get the same answer; 3 identification attempts per conversation; one identity per conversation |
 | Output | every `R$` amount in a reply must match a price field returned by a tool, a value in the manual or an amount the customer typed; otherwise the model gets one retry, then a safe fallback message |
 
 **Per-customer log and long-term memory.** Every message, tool call (arguments and result), guardrail decision and
@@ -160,7 +161,7 @@ The raw files in `data/raw/` are never edited. `scripts/audit_data.py` checks th
 - An email shared by two customers, so the phone (unique in the data) is the identification key.
 - A discontinued bass with 13 units in stock, and a `coming_soon` ukulele that already shows up in orders. Only
   `active` products with stock are offered.
-- Two order totals that do not match their items, and PIX orders without the 5% discount. Order items have no unit
+- Two order totals below the current list price of their items, and PIX orders without the 5% discount. Order items have no unit
   price, so the agent reports totals as recorded and never recalculates a bill.
 - Three historical orders with installments below the manual's minimum.
 - The manual gives two phone numbers, an email with an accent in the domain, and a payment table that contradicts
@@ -185,8 +186,8 @@ The raw files in `data/raw/` are never edited. `scripts/audit_data.py` checks th
 - **Offline (55 tests, under a second):** the store rules, masking, the log and memory files, the team report and the
   agent loop with a fake OpenAI client built from real SDK types.
 - **Live (14 scenarios):** behavior checks against the real model: which tool ran, which guardrail fired, what must
-  never appear in a reply. Nine come from the brief and common requests; five come from the data traps (haggling, an
-  expired Black Friday, a discontinued product, an empty category, switching identity mid-conversation).
+  never appear in a reply. Nine come from the brief and common requests; five come from the data traps (haggling, a
+  Black Friday the data marks as inactive, a discontinued product, an empty category, switching identity mid-conversation).
 - **Evaluation:** model output varies between runs, so one green run proves little. `scripts/eval_live.py` repeats the
   scenarios and reports the pass rate of each. The latest run is in [`tests/EVAL_RESULTS.md`](tests/EVAL_RESULTS.md):
   70/70. Earlier runs that day had three false negatives in my own test (fixed) and two failures I could not diagnose
@@ -210,18 +211,20 @@ Each of these was a commit of its own:
 
 ## Known limitations and what I would do with more time
 
-- **Identity is a phone number.** Anyone who knows a customer's phone can read their orders. In production: a one-time
-  code sent by WhatsApp before showing order data.
+- **Identity is a typed phone number.** In the CLI, anyone who knows a customer's phone can read their orders. In
+  production on WhatsApp, the customer is identified by the sender's number, which WhatsApp already verifies; a
+  one-time code is only needed when someone gives a different phone or an email, as in a web chat.
 - **The price guardrail is a pattern match on `R$` amounts.** It does not catch a wrong number written without `R$`, or
   a wrong fact that is not a price. Next step: a second check of each reply against the tool results, or an
   LLM-as-judge in the evaluation.
 - **Search is keyword-based.** It ranks by matched words, which is enough for 65 products but has no synonyms ("violão
   para criança"). With a bigger catalog: Postgres full-text search or embeddings.
 - **Log files are not safe for concurrent writes** and have no retention policy or deletion command, which LGPD
-  requires. In production: a database table with a retention job and a "forget me" action.
+  requires; customers are also not told that facts about them are kept. In production: a database table with a
+  retention job, a "forget me" action and a notice at the start of the conversation.
 - **The evaluation is small:** 14 scenarios written by me. With more time: scenarios sampled from real conversations,
   and a judge model to score tone, which my regex checks cannot measure.
-- **One channel.** WhatsApp integration would reuse the same `Agent.reply`.
+- **One channel.** WhatsApp integration would reuse the same `Agent.reply`, with the sender's number as the identity.
 
 ## How I used AI coding assistants
 
@@ -248,6 +251,5 @@ chose the fixes. Several rows of the table above came from that reading, not fro
 - One logical change per commit, in Conventional Commits, in English. Every fix has its own commit, in the order the
   problem was found. CI runs the offline tests on Linux, Windows and macOS on every push.
 - A commit command that runs the tests and scans the diff for secrets first. Secrets live in `.env`, which git ignores.
-- No AI co-author lines in the history; this section is the disclosure.
 - A shell hook blocks irreversible commands (force push, hard reset, recursive deletes outside the project), and every
   prompt and tool call of a session is logged locally.
