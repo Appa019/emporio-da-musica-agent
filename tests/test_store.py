@@ -92,3 +92,10 @@ def test_search_is_case_insensitive_and_capped(store):
 ])
 def test_max_installments_follow_policy(price, plan):
     assert tuple(max_installments(price).values()) == plan
+
+
+def test_defect_exchange_counts_from_purchase_not_delivery():
+    # Order 7: bought 2026-02-03, delivered 2026-02-17. On 2026-03-10 it is 21 days after delivery
+    # but 35 after purchase, so the 30-day defect exchange (policy 4.2) has already closed.
+    order = Store(today=date(2026, 3, 10)).get_orders("14", 7)["orders"][0]
+    assert order["days_since_delivery"] == 21 and order["within_30_day_defect_exchange"] is False

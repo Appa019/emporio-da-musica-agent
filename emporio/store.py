@@ -129,9 +129,9 @@ class Store:
             # Assumption: there is no actual delivery date, so the estimate stands in for it.
             days = (self.today - date.fromisoformat(o["estimated_delivery"])).days
             view["days_since_delivery"] = days
-            view["within_7_day_withdrawal"] = days <= 7   # policy 4.1, online purchases
-            view["within_30_day_defect_exchange"] = days <= 30   # policy 4.2
-            view["within_90_day_legal_warranty"] = days <= 90   # policy 8.1
+            view["within_7_day_withdrawal"] = days <= 7   # policy 4.1: counts from receipt
+            view["within_30_day_defect_exchange"] = view["days_since_order"] <= 30   # policy 4.2: counts from purchase
+            view["within_90_day_legal_warranty"] = days <= 90   # policy 8.1: counts from receipt
         return view
 
     def _looks_delayed(self, o: dict) -> bool:
