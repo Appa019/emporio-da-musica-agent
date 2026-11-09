@@ -34,13 +34,10 @@ def chat(tmp_path):
 
 
 def tool_calls(agent, name=None):
+    # A customer's log holds every session they had, so keep only this agent's session.
     events = [json.loads(line) for line in agent.log.path.read_text(encoding="utf-8").splitlines()]
-    return [e for e in events if e["event"] == "tool_call" and (name is None or e["tool"] == name)]
-
-
-def guardrails(agent):
-    events = [json.loads(line) for line in agent.log.path.read_text(encoding="utf-8").splitlines()]
-    return {e["rule"] for e in events if e["event"] == "guardrail"}
+    return [e for e in events if e["session"] == agent.log.session_id and e["event"] == "tool_call"
+            and (name is None or e["tool"] == name)]
 
 
 def test_price_question_uses_the_catalog(chat):
