@@ -22,7 +22,7 @@ def test_anonymous_events_move_to_customer_log(tmp_path):
     log.write("user_message", text="oi, tel 67998123456")
     log.link_customer("1")
     log.write("assistant_message", text="Oi, Lucas!")
-    lines = [json.loads(l) for l in (tmp_path / "1" / "log.jsonl").read_text().splitlines()]
+    lines = [json.loads(l) for l in (tmp_path / "1" / "log.jsonl").read_text(encoding="utf-8").splitlines()]
     assert [l["event"] for l in lines] == ["user_message", "assistant_message"]
     assert lines[0]["text"] == "oi, tel *****-3456"
     assert not list((tmp_path / "_anonymous").iterdir())

@@ -1,3 +1,5 @@
 openai>=3.46,<4
 pypdf>=7,<8
+# time zone database; Windows has none built in
+tzdata>=2026.6
 pytest>=9

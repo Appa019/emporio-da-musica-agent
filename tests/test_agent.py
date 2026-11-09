@@ -56,7 +56,7 @@ def make_agent(tmp_path):
 
 
 def events(path):
-    return [json.loads(line) for line in path.read_text().splitlines()]
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
 def test_customer_3_phone_fixture_matches_data():
@@ -80,7 +80,7 @@ def test_identification_links_log_and_blocks_second_identity(make_agent, tmp_pat
     log = events(agent.log.path)
     assert log[0]["event"] == "session_start"  # anonymous events were moved into the customer log
     assert any(e.get("rule") == "second_identity_in_session" for e in log)
-    assert PHONE_CUSTOMER_3 not in agent.log.path.read_text()  # masked
+    assert PHONE_CUSTOMER_3 not in agent.log.path.read_text(encoding="utf-8")  # masked
 
 
 def test_identification_attempts_are_capped(make_agent):

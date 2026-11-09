@@ -31,6 +31,9 @@ def main() -> None:
     if not os.getenv("OPENAI_API_KEY"):
         sys.exit("OPENAI_API_KEY is missing: copy .env.example to .env and fill it in.")
 
+    # Windows consoles and pipes default to cp1252, which cannot print the emoji the agent sometimes uses.
+    sys.stdin.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
     agent = Agent(Store(today=args.today))
     piped = not sys.stdin.isatty()
     print("Empório da Música: atendimento virtual. Digite 'sair' para encerrar.")
