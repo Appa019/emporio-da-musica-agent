@@ -101,3 +101,15 @@ def test_defect_exchange_counts_from_purchase_not_delivery():
     # but 35 after purchase, so the 30-day defect exchange (policy 4.2) has already closed.
     order = Store(today=date(2026, 3, 10)).get_orders("14", 7)["orders"][0]
     assert order["days_since_delivery"] == 21 and order["within_30_day_defect_exchange"] is False
+
+
+def test_search_ignores_punctuation_in_model_names(store):
+    assert store.search_products("takamine gd-20")["results"][0]["product_id"] == 95
+    assert store.search_products("Crafter HT100")["results"][0]["product_id"] == 90
+
+
+def test_in_stock_items_come_first(store):
+    results = store.search_products(category="Violões", max_price=1000)["results"]
+    availability = [r["availability"] for r in results]
+    assert availability == sorted(availability, key=lambda a: a != "in_stock") and availability[0] == "in_stock"
+    assert 113 not in [r["product_id"] for r in results]  # discontinued Shelby no longer takes a top-10 slot

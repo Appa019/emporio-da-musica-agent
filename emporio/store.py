@@ -22,8 +22,9 @@ def _load(data_dir: Path, name: str) -> list[dict]:
 
 
 def _fold(text: str) -> str:
-    # Lowercase without accents, so "violao" matches "Violões".
-    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().lower()
+    # Lowercase, no accents or punctuation: "Violões" ~ "violoes", "GD-20" ~ "gd20".
+    ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9 ]", "", ascii_text)
 
 
 def _phone_key(text: str) -> str:
@@ -84,7 +85,8 @@ class Store:
             results.append({"product_id": int(p["product_id"]), "name": p["name"], "category": category_name,
                             **offer, "availability": self._availability(p), "description": p["description"],
                             "specs": p["specs"]})
-        results.sort(key=lambda r: r["final_price"])
+        # In-stock items first, so unavailable ones never push sellable items out of the top results.
+        results.sort(key=lambda r: (r["availability"] != "in_stock", r["final_price"]))
         return {"count": len(results), "results": results[:MAX_RESULTS], "truncated": len(results) > MAX_RESULTS}
 
     def get_orders(self, customer_id: str | None, order_id: int | None = None) -> dict:
