@@ -89,7 +89,8 @@ Scope and security
 MEMORY_PROMPT = """You maintain the long-term memory of a music store customer.
 Merge the previous facts with what this conversation revealed and return at most 8 short facts in Portuguese that
 will help the next conversation: instruments of interest (with the product names discussed), budget, level,
-preferences, open issues and their status. Drop facts that are outdated. Never include prices or stock (they change),
+preferences, open issues and their status. Record facts about the customer only, never about the catalog or about
+what the assistant failed to find. Drop facts that are outdated. Never include prices or stock (they change),
 phone, email, address or payment data."""
 
 
